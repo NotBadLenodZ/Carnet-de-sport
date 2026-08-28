@@ -43,7 +43,6 @@ const MUSCLE_GROUPS = [
   { id: "obliques", label: "Obliques", regions: [{ view: "front", slug: "obliques" }] },
   { id: "quadriceps", label: "Quadriceps", regions: [{ view: "front", slug: "quadriceps" }] },
   { id: "deltoide_posterieur", label: "Deltoïde postérieur", regions: [{ view: "back", slug: "deltoids", clip: "medial" }] },
-  { id: "coiffe_rotateurs", label: "Coiffe des rotateurs", regions: [] },
   { id: "trapezes", label: "Trapèzes", regions: [{ view: "front", slug: "trapezius" }, { view: "back", slug: "trapezius" }] },
   { id: "triceps", label: "Triceps", regions: [{ view: "front", slug: "triceps" }, { view: "back", slug: "triceps" }] },
   { id: "haut_du_dos", label: "Haut du dos", regions: [{ view: "back", slug: "upper-back", clip: "upper" }] },
@@ -153,10 +152,7 @@ function saveKey(key, value) {
 /* ---------------------------- default data ---------------------------- */
 
 const DEFAULT_TYPES = [
-  { id: "bas-libre", name: "Bas libre", repMin: 5, repMax: 8, repStep: 1, weightStep: 2.5 },
-  { id: "bas-machine", name: "Bas machine", repMin: 8, repMax: 12, repStep: 2, weightStep: 2.5 },
-  { id: "haut-libre", name: "Haut libre", repMin: 6, repMax: 10, repStep: 1, weightStep: 1.25 },
-  { id: "haut-machine", name: "Haut machine", repMin: 8, repMax: 12, repStep: 2, weightStep: 2 },
+  { id: "exemple", name: "Exemple", repMin: 8, repMax: 12, repStep: 1, weightStep: 5 },
 ];
 
 function mkSet(reps, weight, rest) {
@@ -169,68 +165,30 @@ function mkProgram(name, exercises) {
   return { id: uid(), name, cycleCount: 0, totalValidations: 0, exercises };
 }
 
-function buildDefaultPrograms() {
-  return [
-    mkProgram("Kagami 1", [
-      mkEx({ name: "Squat barre", typeId: "bas-libre", sets: [mkSet(5, 70, 180), mkSet(5, 80, 180), mkSet(5, 80, 180), mkSet(5, 80, 180)] }),
-      mkEx({ name: "Soulevé de terre", typeId: "bas-libre", sets: [mkSet(5, 70, 180), mkSet(5, 70, 180), mkSet(5, 70, 180), mkSet(5, 70, 180)] }),
-      mkEx({ name: "Leg press", typeId: "bas-machine", sets: [mkSet(8, 59, 75), mkSet(8, 59, 75), mkSet(8, 59, 75)] }),
-      mkEx({ name: "Leg curl / Leg extension", typeId: "bas-machine", mode: "alterné", alternates: ["Leg curl", "Leg extension"], sets: [mkSet(6, 39, 90), mkSet(6, 39, 90), mkSet(6, 39, 90)] }),
-      mkEx({ name: "Élévation mollet", typeId: "bas-machine", sets: [mkSet(15, 60, 90), mkSet(15, 60, 90), mkSet(15, 60, 90), mkSet(15, 60, 90)] }),
-    ]),
-    mkProgram("Kagami 2", [
-      mkEx({ name: "Fente bulgare", typeId: "bas-libre", sets: [mkSet("8/côté", 50, 120), mkSet("8/côté", 50, 120), mkSet("8/côté", 50, 120), mkSet("8/côté", 50, 120)] }),
-      mkEx({ name: "Romanian deadlift", typeId: "bas-libre", sets: [mkSet(8, 55, 120), mkSet(8, 55, 120), mkSet(8, 55, 120), mkSet(8, 55, 120)] }),
-      mkEx({ name: "Hip thrust", typeId: "bas-machine", sets: [mkSet(10, 32.7, 75), mkSet(10, 32.7, 75), mkSet(10, 32.7, 75), mkSet(10, 32.7, 75)] }),
-      mkEx({ name: "Fast squat", typeId: "bas-libre", sets: [mkSet(10, 45, 180), mkSet(10, 45, 180), mkSet(10, 45, 180), mkSet(10, 45, 180)] }),
-      mkEx({ name: "Élévation mollet", typeId: "bas-machine", sets: [mkSet(6, 100, 120), mkSet(6, 100, 120), mkSet(6, 100, 120), mkSet(6, 100, 120)] }),
-    ]),
-    mkProgram("Hinata 1", [
-      mkEx({ name: "Fast squat", sets: [mkSet(6, 30, 120), mkSet(6, 30, 120), mkSet(6, 30, 120), mkSet(6, 30, 120)] }),
-      mkEx({ name: "Depth jump", sets: [mkSet(5, 0, 180), mkSet(5, 0, 180), mkSet(5, 0, 180), mkSet(5, 0, 180)] }),
-      mkEx({ name: "Knee to feet jump", sets: [mkSet(5, 0, 180), mkSet(5, 0, 180), mkSet(5, 0, 180), mkSet(5, 0, 180)] }),
-      mkEx({ name: "Drop jump (GCT)", sets: [mkSet(8, 0, 180), mkSet(8, 0, 180), mkSet(8, 0, 180)] }),
-      mkEx({ name: "Corde à sauter", sets: [mkSet("1 min", 0, 120)] }),
-    ]),
-    mkProgram("Hinata 2", [
-      mkEx({ name: "Fente sautée", sets: [mkSet("6/côté", 10, 180), mkSet("6/côté", 10, 180), mkSet("6/côté", 10, 180), mkSet("6/côté", 10, 180)] }),
-      mkEx({ name: "Saut en longueur", sets: [mkSet(5, 0, 180), mkSet(5, 0, 180), mkSet(5, 0, 180), mkSet(5, 0, 180)] }),
-      mkEx({ name: "Bounding", sets: [mkSet("20m", 0, 180), mkSet("20m", 0, 180), mkSet("20m", 0, 180)] }),
-      mkEx({ name: "Sprint", sets: [mkSet("20m", 0, 180), mkSet("20m", 0, 180), mkSet("20m", 0, 180), mkSet("20m", 0, 180)] }),
-      mkEx({ name: "Corde à sauter", sets: [mkSet("1 min", 0, 120)] }),
-    ]),
-    mkProgram("Gojo 1", [
-      mkEx({ name: "Développé couché", typeId: "haut-libre", sets: [mkSet(6, 45, 120), mkSet(6, 45, 120), mkSet(6, 45, 120)] }),
-      mkEx({ name: "Développé couché incliné", typeId: "haut-libre", sets: [mkSet(10, 25, 75), mkSet(10, 25, 75), mkSet(10, 25, 75)] }),
-      mkEx({ name: "Développé militaire", typeId: "haut-libre", sets: [mkSet(6, 24, 120), mkSet(6, 24, 120), mkSet(6, 24, 120)] }),
-      mkEx({ name: "Kickback haltère", typeId: "haut-libre", sets: [mkSet(8, 9, 75), mkSet(8, 9, 75), mkSet(8, 9, 75)] }),
-      mkEx({ name: "Skull crusher", typeId: "haut-libre", sets: [mkSet(8, 15, 75), mkSet(8, 15, 75), mkSet(8, 15, 75)] }),
-      mkEx({ name: "Extension avant-bras barre", typeId: "haut-libre", sets: [mkSet(10, 15, 75), mkSet(10, 15, 75), mkSet(10, 15, 75)] }),
-    ]),
-    mkProgram("Gojo 2", [
-      mkEx({ name: "Traction", typeId: "haut-libre", sets: [mkSet(6, 0, 75), mkSet(6, 0, 75), mkSet(6, 0, 75)] }),
-      mkEx({ name: "Tirage vertical / horizontal", typeId: "haut-machine", mode: "alterné", alternates: ["Tirage vertical", "Tirage horizontal"], sets: [mkSet(10, 32, 75), mkSet(10, 32, 75), mkSet(10, 32, 75)] }),
-      mkEx({ name: "Rowing barre", typeId: "haut-libre", sets: [mkSet(8, 40, 120), mkSet(8, 40, 120), mkSet(8, 40, 120)] }),
-      mkEx({ name: "Face pull", typeId: "haut-machine", sets: [mkSet(15, 0, 75), mkSet(15, 0, 75), mkSet(15, 0, 75)] }),
-      mkEx({ name: "Biceps curl barre", typeId: "haut-libre", sets: [mkSet(10, 10, 75), mkSet(10, 10, 75), mkSet(10, 10, 75)] }),
-      mkEx({ name: "Hammer curl strict", typeId: "haut-libre", sets: [mkSet(10, 6, 75), mkSet(10, 6, 75), mkSet(10, 6, 75)] }),
-    ]),
-    mkProgram("Mobil 1", [
-      mkEx({ name: "Sissy squat", sets: [mkSet(15, 0, 75), mkSet(15, 0, 75), mkSet(15, 0, 75)] }),
-      mkEx({ name: "Terminal knee extension (élastique)", sets: [mkSet(20, 0, 75), mkSet(20, 0, 75), mkSet(20, 0, 75)] }),
-      mkEx({ name: "Reverse nordic", sets: [mkSet(8, 0, 75), mkSet(8, 0, 75), mkSet(8, 0, 75)] }),
-      mkEx({ name: "Side-lying external rotation (poulie)", sets: [mkSet(15, 0, 75), mkSet(15, 0, 75), mkSet(15, 0, 75)] }),
-      mkEx({ name: "Superman", sets: [mkSet(15, 2, 75), mkSet(15, 2, 75), mkSet(15, 2, 75)] }),
-      mkEx({ name: "Banded pull-apart (élastique)", sets: [mkSet(20, 0, 75), mkSet(20, 0, 75), mkSet(20, 0, 75)] }),
-      mkEx({ name: "Étirement ischio assis", sets: [mkSet("45s", 0, 60), mkSet("45s", 0, 60)] }),
-      mkEx({ name: "World's greatest stretch", sets: [mkSet(5, 0, 60), mkSet(5, 0, 60), mkSet(5, 0, 60)] }),
-    ]),
-  ];
+// Bibliothèque de départ : un seul exercice d'exemple (Squat), pour ne pas imposer
+// les fiches personnelles de l'auteur à qui découvre l'appli pour la première fois.
+function buildDefaultLibrary() {
+  const squat = mkLibraryExercise("Squat");
+  squat.primary = ["quadriceps"];
+  squat.secondary = ["fessiers"];
+  return [squat];
 }
 
-const INITIAL_VALIDATION_COUNTS = { "Kagami 1": 3, "Kagami 2": 3, "Gojo 1": 3, "Gojo 2": 3 };
-function applyInitialValidationCounts(programs) {
-  return programs.map((p) => (INITIAL_VALIDATION_COUNTS[p.name] ? { ...p, totalValidations: INITIAL_VALIDATION_COUNTS[p.name] } : p));
+// Séances de départ : une seule séance d'exemple, construite avec le sélecteur
+// bibliothèque (comme un utilisateur le ferait), pour montrer le fonctionnement.
+function buildDefaultPrograms(library, types) {
+  const squatLib = library[0];
+  const exempleType = types[0];
+  return [
+    mkProgram("Exemple", [
+      mkEx({
+        name: squatLib.name,
+        libraryExerciseId: squatLib.id,
+        typeId: exempleType.id,
+        sets: [mkSet(8, 80, 180), mkSet(8, 80, 180), mkSet(8, 80, 180)],
+      }),
+    ]),
+  ];
 }
 
 const DEFAULT_BODY_METRICS = [
@@ -278,19 +236,25 @@ const state = {
 };
 
 function loadState() {
+  const storedTypes = loadJSON("exercise-types", null);
+  state.exerciseTypes = storedTypes || DEFAULT_TYPES;
+  const storedLibrary = loadJSON("library-exercises", null);
+  state.libraryExercises = storedLibrary || buildDefaultLibrary();
+
   const storedPrograms = loadJSON("programs", null);
   const firstLoad = storedPrograms === null;
-  state.programs = storedPrograms || applyInitialValidationCounts(buildDefaultPrograms());
-  state.exerciseTypes = loadJSON("exercise-types", null) || DEFAULT_TYPES;
+  state.programs = storedPrograms || buildDefaultPrograms(state.libraryExercises, state.exerciseTypes);
+
   state.schedule = loadJSON("schedule", null) || {};
   state.history = loadJSON("history", null) || [];
   const storedBody = loadJSON("body-metrics", null);
   state.bodyMetrics = storedBody || DEFAULT_BODY_METRICS;
   state.goals = loadJSON("goals", null) || [];
   state.records = loadJSON("records", null) || [];
-  state.libraryExercises = loadJSON("library-exercises", null) || [];
   state.activeProgramId = state.programs[0] ? state.programs[0].id : null;
   if (firstLoad) saveKeySilent("programs", state.programs);
+  if (!storedLibrary) saveKeySilent("library-exercises", state.libraryExercises);
+  if (!storedTypes) saveKeySilent("exercise-types", state.exerciseTypes);
   if (!storedBody) saveKeySilent("body-metrics", state.bodyMetrics);
 }
 function saveKeySilent(key, value) {
@@ -372,8 +336,13 @@ function updateExerciseName(programId, exId, value) {
 function updateExerciseType(programId, exId, value) {
   mutateExercise(programId, exId, (ex) => ({ ...ex, typeId: value || null }));
 }
-function updateExerciseLibraryLink(programId, exId, value) {
-  mutateExercise(programId, exId, (ex) => ({ ...ex, libraryExerciseId: value || null }));
+function updateExerciseLibrarySelection(programId, exId, libraryId) {
+  const lib = state.libraryExercises.find((l) => l.id === libraryId);
+  mutateExercise(programId, exId, (ex) => ({
+    ...ex,
+    libraryExerciseId: lib ? lib.id : null,
+    name: lib ? lib.name : "",
+  }));
 }
 function toggleMode(programId, exId) {
   mutateExercise(programId, exId, (ex) =>
@@ -928,10 +897,14 @@ function renderProgramDetail() {
       return `
       <div class="card">
         <div class="row-flex mb10">
-          <input class="input bold" data-action="ex-name" data-program="${program.id}" data-ex="${ex.id}" value="${escapeHtml(ex.name)}" />
+          <select class="input bold" data-action="ex-library-select" data-program="${program.id}" data-ex="${ex.id}">
+            <option value="">— Choisir un exercice —</option>
+            ${state.libraryExercises.map((l) => `<option value="${l.id}" ${ex.libraryExerciseId === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}
+          </select>
           <button class="btn btn-ghost ${ex.mode === "alterné" ? "on-yellow" : ""}" data-action="toggle-mode" data-program="${program.id}" data-ex="${ex.id}">${ICO.repeat} ${ex.mode === "alterné" ? "Alterné" : "Fixe"}</button>
           <button class="icon-btn" data-action="remove-exercise" data-program="${program.id}" data-ex="${ex.id}">${ICO.trash}</button>
         </div>
+        ${!state.libraryExercises.length ? '<p class="hint mb10">Aucune fiche dans la bibliothèque — crées-en une dans l\'onglet Bibliothèque pour pouvoir la choisir ici.</p>' : ""}
         ${altHtml}
         <div class="mb10">
           <select class="input" data-action="ex-type" data-program="${program.id}" data-ex="${ex.id}">
@@ -939,12 +912,6 @@ function renderProgramDetail() {
             ${state.exerciseTypes.map((t) => `<option value="${t.id}" ${ex.typeId === t.id ? "selected" : ""}>${escapeHtml(t.name)}</option>`).join("")}
           </select>
           ${type ? `<div class="hint">${type.repMin}–${type.repMax} reps · +${type.repStep} reps / +${type.weightStep}kg</div>` : ""}
-        </div>
-        <div class="mb10">
-          <select class="input" data-action="ex-library-link" data-program="${program.id}" data-ex="${ex.id}">
-            <option value="">Non lié à la bibliothèque (pas de points muscles)</option>
-            ${state.libraryExercises.map((l) => `<option value="${l.id}" ${ex.libraryExerciseId === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}
-          </select>
         </div>
         <div class="set-header">
           <span></span><span>Reps</span><span>Kg</span><span>Récup (s)</span><span></span>
@@ -1738,9 +1705,6 @@ function handleInput(e) {
   const sub = el.dataset.sub;
 
   switch (a) {
-    case "ex-name":
-      updateExerciseName(program, ex, el.value);
-      break;
     case "alt-field":
       updateAlternate(program, ex, Number(idx), el.value);
       break;
@@ -1781,8 +1745,8 @@ function handleChange(e) {
     case "ex-type":
       updateExerciseType(program, ex, el.value);
       break;
-    case "ex-library-link":
-      updateExerciseLibraryLink(program, ex, el.value);
+    case "ex-library-select":
+      updateExerciseLibrarySelection(program, ex, el.value);
       break;
     case "schedule-day":
       updateScheduleDay(el.dataset.day, el.value);
