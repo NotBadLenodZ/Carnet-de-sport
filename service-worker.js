@@ -1,4 +1,4 @@
-const CACHE_NAME = "carnet-de-fonte-v1";
+const CACHE_NAME = "carnet-de-fonte-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -21,21 +21,19 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Cache-first : marche hors-ligne. Tente le réseau pour rafraîchir le cache en tâche de fond.
+// Réseau en priorité (toujours la dernière version quand il y a du réseau),
+// avec repli sur le cache uniquement si hors-ligne.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || networkFetch;
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
