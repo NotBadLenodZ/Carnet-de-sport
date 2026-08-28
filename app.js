@@ -191,19 +191,6 @@ function buildDefaultPrograms(library, types) {
   ];
 }
 
-const DEFAULT_BODY_METRICS = [
-  { date: "2026-04-05", weight: 61.1, fat: 11.0, muscle: 50.3, water: 64.7, height: null },
-  { date: "2026-04-12", weight: 62.1, fat: 11.4, muscle: 50.1, water: 64.4, height: null },
-  { date: "2026-04-19", weight: 60.6, fat: 10.7, muscle: 50.5, water: 65.0, height: null },
-  { date: "2026-04-26", weight: 61.2, fat: 10.9, muscle: 50.3, water: 64.8, height: null },
-  { date: "2026-05-03", weight: 62.2, fat: 11.7, muscle: 49.9, water: 64.2, height: null },
-  { date: "2026-05-10", weight: 62.6, fat: 11.6, muscle: 50.0, water: 64.2, height: null },
-  { date: "2026-05-17", weight: 62.2, fat: 11.4, muscle: 50.1, water: 64.4, height: null },
-  { date: "2026-05-24", weight: 60.7, fat: 10.9, muscle: 50.4, water: 64.8, height: null },
-  { date: "2026-05-31", weight: 60.8, fat: 10.8, muscle: 50.4, water: 64.9, height: null },
-  { date: "2026-06-07", weight: 60.6, fat: 10.7, muscle: 50.5, water: 65.0, height: null },
-].map((e) => ({ id: uid(), ...e }));
-
 /* ---------------------------- state ---------------------------- */
 
 const state = {
@@ -248,7 +235,7 @@ function loadState() {
   state.schedule = loadJSON("schedule", null) || {};
   state.history = loadJSON("history", null) || [];
   const storedBody = loadJSON("body-metrics", null);
-  state.bodyMetrics = storedBody || DEFAULT_BODY_METRICS;
+  state.bodyMetrics = storedBody || [];
   state.goals = loadJSON("goals", null) || [];
   state.records = loadJSON("records", null) || [];
   state.activeProgramId = state.programs[0] ? state.programs[0].id : null;
