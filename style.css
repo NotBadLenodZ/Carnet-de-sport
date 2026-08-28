@@ -130,9 +130,9 @@ body {
   overflow-x: auto;
 }
 .tab-btn {
-  flex: 1;
-  min-width: 66px;
-  padding: 11px 6px;
+  flex: 0 0 auto;
+  min-width: 78px;
+  padding: 11px 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -143,6 +143,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.02em;
   cursor: pointer;
+  white-space: nowrap;
 }
 .tab-btn.active {
   background: var(--accent-soft);
@@ -570,4 +571,79 @@ select.input {
   color: var(--accent);
   text-transform: uppercase;
   margin-bottom: 6px;
+}
+
+/* ---------- bibliothèque : corps musculaire ---------- */
+.body-pair {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  margin: 10px 0;
+}
+.body-col {
+  text-align: center;
+}
+.body-col span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+.body-svg-wrap svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.muscle-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.muscle-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.muscle-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.muscle-tag {
+  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--muted);
+  cursor: pointer;
+}
+.muscle-tag.is-primary {
+  background: #2E6DA8;
+  border-color: #2E6DA8;
+  color: #E9F1FA;
+}
+.muscle-tag.is-secondary {
+  background: rgba(143, 187, 224, 0.18);
+  border-color: #8FBBE0;
+  color: #8FBBE0;
+}
+.muscle-tag:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.tag-section-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 14px 0 8px;
 }
