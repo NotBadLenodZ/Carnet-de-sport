@@ -219,6 +219,7 @@ const state = {
     creatingLibraryExercise: false,
     confirmingDeleteLibraryId: null,
     showMuscleMap: false,
+    exerciseOpen: {}, // { [exerciseId]: bool } — replié par défaut
   },
 };
 
@@ -312,10 +313,35 @@ function moveProgram(id, dir) {
   mutatePrograms(() => arr);
 }
 function addExercise(programId) {
-  mutateProgram(programId, (p) => ({ ...p, exercises: [...p.exercises, mkEx({ name: "Nouvel exercice", sets: [mkSet(10, 0, 75)] })] }));
+  const newEx = mkEx({ name: "", sets: [mkSet(10, 0, 75)] });
+  mutatePrograms((programs) => programs.map((p) => (p.id === programId ? { ...p, exercises: [...p.exercises, newEx] } : p)), { render: false });
+  state.ui.exerciseOpen = { ...state.ui.exerciseOpen, [newEx.id]: true };
+  render();
 }
 function removeExercise(programId, exId) {
   mutateProgram(programId, (p) => ({ ...p, exercises: p.exercises.filter((e) => e.id !== exId) }));
+}
+function moveExercise(programId, exId, dir) {
+  mutateProgram(programId, (p) => {
+    const idx = p.exercises.findIndex((e) => e.id === exId);
+    const swapIdx = idx + dir;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= p.exercises.length) return p;
+    const arr = [...p.exercises];
+    [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+    return { ...p, exercises: arr };
+  });
+}
+function toggleExerciseOpen(exId) {
+  state.ui.exerciseOpen = { ...state.ui.exerciseOpen, [exId]: !state.ui.exerciseOpen[exId] };
+  render();
+}
+function setAllExercisesOpen(program, open) {
+  const next = { ...state.ui.exerciseOpen };
+  program.exercises.forEach((ex) => {
+    next[ex.id] = open;
+  });
+  state.ui.exerciseOpen = next;
+  render();
 }
 function updateExerciseName(programId, exId, value) {
   mutateExercise(programId, exId, (ex) => ({ ...ex, name: value }), { render: false });
@@ -848,7 +874,8 @@ function renderProgramDetail() {
   if (!program) return renderProgramList();
 
   const exercisesHtml = program.exercises
-    .map((ex) => {
+    .map((ex, idx) => {
+      const isOpen = !!state.ui.exerciseOpen[ex.id];
       const type = state.exerciseTypes.find((t) => t.id === ex.typeId);
       const altHtml =
         ex.mode === "alterné"
@@ -883,6 +910,21 @@ function renderProgramDetail() {
 
       return `
       <div class="card">
+        <div class="ex-row-header" data-action="toggle-exercise-open" data-ex="${ex.id}">
+          <div class="reorder-btns">
+            <button class="icon-btn" data-action="move-exercise" data-program="${program.id}" data-ex="${ex.id}" data-dir="-1" ${idx === 0 ? "disabled" : ""}>${ICO.up}</button>
+            <button class="icon-btn" data-action="move-exercise" data-program="${program.id}" data-ex="${ex.id}" data-dir="1" ${idx === program.exercises.length - 1 ? "disabled" : ""}>${ICO.down}</button>
+          </div>
+          <div class="ex-row-title">
+            <span class="ex-row-name">${ex.name ? escapeHtml(ex.name) : '<span class="muted">Exercice non choisi</span>'}</span>
+            <span class="muted small">${ex.sets.length} série${ex.sets.length > 1 ? "s" : ""}${ex.mode === "alterné" ? " · alterné" : ""}</span>
+          </div>
+          <span class="chevron">${isOpen ? ICO.up : ICO.down}</span>
+        </div>
+        ${
+          isOpen
+            ? `
+        <div class="ex-row-body">
         <div class="row-flex mb10">
           <select class="input bold" data-action="ex-library-select" data-program="${program.id}" data-ex="${ex.id}">
             <option value="">— Choisir un exercice —</option>
@@ -905,6 +947,9 @@ function renderProgramDetail() {
         </div>
         <div class="stack-sm">${setsHtml}</div>
         <button class="btn btn-ghost btn-sm mt8" data-action="add-set" data-program="${program.id}" data-ex="${ex.id}">${ICO.plus} Série</button>
+        </div>`
+            : ""
+        }
       </div>`;
     })
     .join("");
@@ -947,6 +992,13 @@ function renderProgramDetail() {
         ${deleteBlock}
       </div>
       ${muscleMapBlock}
+      ${
+        program.exercises.length
+          ? `<button class="btn btn-ghost btn-block" data-action="toggle-all-exercises" data-program="${program.id}">${
+              program.exercises.every((ex) => state.ui.exerciseOpen[ex.id]) ? "Tout fermer" : "Tout ouvrir"
+            }</button>`
+          : ""
+      }
       ${exercisesHtml}
       <button class="btn btn-ghost btn-block" data-action="add-exercise" data-program="${program.id}">${ICO.plus} Ajouter un exercice</button>
     </div>
@@ -1513,6 +1565,20 @@ function handleClick(e) {
     case "add-exercise":
       addExercise(program);
       break;
+    case "move-exercise":
+      moveExercise(program, ex, dir);
+      break;
+    case "toggle-exercise-open":
+      toggleExerciseOpen(el.dataset.ex);
+      break;
+    case "toggle-all-exercises": {
+      const prog = state.programs.find((p) => p.id === program);
+      if (prog) {
+        const allOpen = prog.exercises.length > 0 && prog.exercises.every((e) => state.ui.exerciseOpen[e.id]);
+        setAllExercisesOpen(prog, !allOpen);
+      }
+      break;
+    }
     case "add-set":
       addSetToExercise(program, ex);
       break;
