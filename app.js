@@ -662,16 +662,6 @@ function removeLibraryExercise(id) {
   state.ui.confirmingDeleteLibraryId = null;
   render();
 }
-function moveLibraryExercise(id, dir) {
-  const idx = state.libraryExercises.findIndex((e) => e.id === id);
-  const swapIdx = idx + dir;
-  if (idx < 0 || swapIdx < 0 || swapIdx >= state.libraryExercises.length) return;
-  const arr = [...state.libraryExercises];
-  [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
-  state.libraryExercises = arr;
-  saveKey("library-exercises", state.libraryExercises);
-  render();
-}
 function mutateLibraryExercise(id, fn, { render: doRender = true } = {}) {
   state.libraryExercises = state.libraryExercises.map((e) => (e.id === id ? fn(e) : e));
   saveKey("library-exercises", state.libraryExercises);
@@ -937,7 +927,7 @@ function renderProgramDetail() {
         <div class="row-flex mb10">
           <select class="input bold" data-action="ex-library-select" data-program="${program.id}" data-ex="${ex.id}">
             <option value="">— Choisir un exercice —</option>
-            ${state.libraryExercises.map((l) => `<option value="${l.id}" ${ex.libraryExerciseId === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}
+            ${[...state.libraryExercises].sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" })).map((l) => `<option value="${l.id}" ${ex.libraryExerciseId === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}
           </select>
           <button class="btn btn-ghost ${ex.mode === "alterné" ? "on-yellow" : ""}" data-action="toggle-mode" data-program="${program.id}" data-ex="${ex.id}">${ICO.repeat} ${ex.mode === "alterné" ? "Alterné" : "Fixe"}</button>
           <button class="icon-btn" data-action="remove-exercise" data-program="${program.id}" data-ex="${ex.id}">${ICO.trash}</button>
@@ -1393,17 +1383,14 @@ function renderBibliothequeTab() {
 }
 
 function renderLibraryList() {
-  const rows = state.libraryExercises
+  const sorted = [...state.libraryExercises].sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+  const rows = sorted
     .map(
-      (e, idx) => `
+      (e) => `
     <div class="list-row" data-action="open-library-exercise" data-id="${e.id}">
       <div class="list-row-main">
         <span class="list-row-name">${escapeHtml(e.name)}</span>
         <span class="list-row-badge">${e.primary.length + e.secondary.length} muscle${e.primary.length + e.secondary.length > 1 ? "s" : ""}</span>
-      </div>
-      <div class="reorder-btns">
-        <button class="icon-btn" data-action="move-library-exercise" data-id="${e.id}" data-dir="-1" ${idx === 0 ? "disabled" : ""}>${ICO.up}</button>
-        <button class="icon-btn" data-action="move-library-exercise" data-id="${e.id}" data-dir="1" ${idx === state.libraryExercises.length - 1 ? "disabled" : ""}>${ICO.down}</button>
       </div>
     </div>`
     )
@@ -1713,9 +1700,6 @@ function handleClick(e) {
     case "back-to-library-list":
       state.ui.libView = "list";
       render();
-      break;
-    case "move-library-exercise":
-      moveLibraryExercise(id, dir);
       break;
     case "start-new-library-exercise":
       state.ui.creatingLibraryExercise = true;
