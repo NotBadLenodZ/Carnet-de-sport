@@ -26,8 +26,7 @@ const DELT_BACK_X = [950, 1222];
 
 const MUSCLE_GROUPS = [
   { id: "abdominaux", label: "Abdominaux", regions: [{ view: "front", slug: "abs" }] },
-  { id: "abducteurs", label: "Abducteurs", regions: [{ view: "front", slug: "adductors" }], shared: true },
-  { id: "adducteurs", label: "Adducteurs", regions: [{ view: "front", slug: "adductors" }], shared: true },
+  { id: "adducteurs", label: "Adducteurs", regions: [{ view: "front", slug: "adductors" }] },
   { id: "biceps", label: "Biceps", regions: [{ view: "front", slug: "biceps" }] },
   { id: "mollets", label: "Mollets", regions: [{ view: "front", slug: "calves" }, { view: "back", slug: "calves" }] },
   { id: "cardio", label: "Cardio", regions: [] },
@@ -42,6 +41,7 @@ const MUSCLE_GROUPS = [
   { id: "cou", label: "Cou", regions: [{ view: "front", slug: "neck" }, { view: "back", slug: "neck" }] },
   { id: "obliques", label: "Obliques", regions: [{ view: "front", slug: "obliques" }] },
   { id: "quadriceps", label: "Quadriceps", regions: [{ view: "front", slug: "quadriceps" }] },
+  { id: "abducteurs", label: "Abducteurs", regions: [{ view: "front", slug: "quadriceps", clip: "corner" }] },
   { id: "deltoide_posterieur", label: "Deltoïde postérieur", regions: [{ view: "back", slug: "deltoids", clip: "medial" }] },
   { id: "trapezes", label: "Trapèzes", regions: [{ view: "front", slug: "trapezius" }, { view: "back", slug: "trapezius" }] },
   { id: "triceps", label: "Triceps", regions: [{ view: "front", slug: "triceps" }, { view: "back", slug: "triceps" }] },
@@ -84,9 +84,18 @@ function clipRectsForRegion(view, region) {
     // lateral = deux bandes (extérieur gauche + extérieur droit du membre)
     return { rect: null, lateral: true, lo, hi, base };
   }
+  if (region.slug === "quadriceps" && region.clip === "corner") {
+    // Coin haut/extérieur du quadriceps, coupé par une simple diagonale
+    return {
+      polygons: ["235,648 302,648 235,772", "489,648 422,648 489,772"],
+      diagLines: [
+        [302, 648, 235, 772],
+        [422, 648, 489, 772],
+      ],
+    };
+  }
   return null;
 }
-
 
 /* ---------------------------- helpers ---------------------------- */
 
@@ -1851,21 +1860,23 @@ document.addEventListener("DOMContentLoaded", init);
    RENDU DU CORPS MUSCULAIRE (SVG)
    ============================================================ */
 
-function muscleGroupPathsD(view, slug) {
+function muscleGroupPathsD(view, slug, pathIndices) {
   const table = view === "front" ? MUSCLE_SVG_FRONT : MUSCLE_SVG_BACK;
-  return table[slug] || [];
+  const all = table[slug] || [];
+  if (!pathIndices) return all;
+  return all.filter((_, i) => pathIndices.includes(i));
 }
 
 // Construit le SVG d'une vue (front/back), avec une couleur par groupe (scores: {muscleId: points})
 // Regroupe les catégories qui pointent vers exactement la même zone visuelle
-// (même slug + même découpe), pour ne dessiner cette zone qu'une seule fois.
+// (même slug + même découpe + mêmes indices de tracé), pour ne dessiner cette zone qu'une seule fois.
 function dedupedRegionsForView(view) {
   const map = new Map();
   MUSCLE_GROUPS.forEach((group) => {
     const region = group.regions.find((r) => r.view === view);
     if (!region) return;
-    const key = region.slug + "|" + (region.clip || "all");
-    if (!map.has(key)) map.set(key, { slug: region.slug, clip: region.clip, groupIds: [] });
+    const key = region.slug + "|" + (region.clip || "all") + "|" + (region.pathIndices ? region.pathIndices.join(",") : "all");
+    if (!map.has(key)) map.set(key, { slug: region.slug, clip: region.clip, pathIndices: region.pathIndices, groupIds: [] });
     map.get(key).groupIds.push(group.id);
   });
   return [...map.values()];
@@ -1897,7 +1908,7 @@ function buildBodySVG(view, scoresOrColorFn) {
   });
 
   dedupedRegionsForView(view).forEach((region) => {
-    const ds = muscleGroupPathsD(view, region.slug);
+    const ds = muscleGroupPathsD(view, region.slug, region.pathIndices);
     if (!ds.length) return;
     const pathsHtml = ds.map((d) => `<path d="${d}"/>`).join("");
     const color = colorFn(region.groupIds);
@@ -1905,6 +1916,17 @@ function buildBodySVG(view, scoresOrColorFn) {
 
     if (!clipInfo) {
       content += `<g fill="${color}">${pathsHtml}</g>`;
+      return;
+    }
+    if (clipInfo.polygons) {
+      const id = nextId();
+      defs += `<clipPath id="${id}">${clipInfo.polygons.map((pts) => `<polygon points="${pts}"/>`).join("")}</clipPath>`;
+      content += `<g clip-path="url(#${id})" fill="${color}">${pathsHtml}</g>`;
+      const shapeClipId = nextId();
+      defs += `<clipPath id="${shapeClipId}">${pathsHtml}</clipPath>`;
+      (clipInfo.diagLines || []).forEach(([x1, y1, x2, y2]) => {
+        content += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#171513" stroke-width="4" clip-path="url(#${shapeClipId})"/>`;
+      });
       return;
     }
     if (clipInfo.medial) {
