@@ -1857,9 +1857,25 @@ function muscleGroupPathsD(view, slug) {
 }
 
 // Construit le SVG d'une vue (front/back), avec une couleur par groupe (scores: {muscleId: points})
+// Regroupe les catégories qui pointent vers exactement la même zone visuelle
+// (même slug + même découpe), pour ne dessiner cette zone qu'une seule fois.
+function dedupedRegionsForView(view) {
+  const map = new Map();
+  MUSCLE_GROUPS.forEach((group) => {
+    const region = group.regions.find((r) => r.view === view);
+    if (!region) return;
+    const key = region.slug + "|" + (region.clip || "all");
+    if (!map.has(key)) map.set(key, { slug: region.slug, clip: region.clip, groupIds: [] });
+    map.get(key).groupIds.push(group.id);
+  });
+  return [...map.values()];
+}
+
 function buildBodySVG(view, scoresOrColorFn) {
   const colorFn =
-    typeof scoresOrColorFn === "function" ? scoresOrColorFn : (muscleId) => colorForMusclePoints((scoresOrColorFn && scoresOrColorFn[muscleId]) || 0);
+    typeof scoresOrColorFn === "function"
+      ? scoresOrColorFn
+      : (groupIds) => colorForMusclePoints(groupIds.reduce((sum, id) => sum + ((scoresOrColorFn && scoresOrColorFn[id]) || 0), 0));
   const outline = view === "front" ? BODY_OUTLINE_FRONT : BODY_OUTLINE_BACK;
   const viewBox = view === "front" ? "0 0 724 1448" : "724 0 724 1448";
 
@@ -1880,13 +1896,11 @@ function buildBodySVG(view, scoresOrColorFn) {
     }
   });
 
-  MUSCLE_GROUPS.forEach((group) => {
-    const region = group.regions.find((r) => r.view === view);
-    if (!region) return;
+  dedupedRegionsForView(view).forEach((region) => {
     const ds = muscleGroupPathsD(view, region.slug);
     if (!ds.length) return;
     const pathsHtml = ds.map((d) => `<path d="${d}"/>`).join("");
-    const color = colorFn(group.id);
+    const color = colorFn(region.groupIds);
     const clipInfo = clipRectsForRegion(view, region);
 
     if (!clipInfo) {
@@ -1934,12 +1948,13 @@ function buildBodySVG(view, scoresOrColorFn) {
 }
 
 function buildBodySVGWithFixedColors(view, ex, primaryColor, secondaryColor) {
-  return buildBodySVG(view, (muscleId) => {
-    if (ex.primary.includes(muscleId)) return primaryColor;
-    if (ex.secondary.includes(muscleId)) return secondaryColor;
+  return buildBodySVG(view, (groupIds) => {
+    if (groupIds.some((id) => ex.primary.includes(id))) return primaryColor;
+    if (groupIds.some((id) => ex.secondary.includes(id))) return secondaryColor;
     return NEUTRAL_MUSCLE;
   });
 }
+
 
 function renderBodyPair(scores, size) {
   const s = size || 130;
