@@ -366,25 +366,48 @@ function updateExerciseLibrarySelection(programId, exId, libraryId) {
     name: lib ? lib.name : "",
   }));
 }
+function libExName(id) {
+  const l = state.libraryExercises.find((x) => x.id === id);
+  return l ? l.name : "";
+}
 function toggleMode(programId, exId) {
   mutateExercise(programId, exId, (ex) =>
     ex.mode === "fixe"
-      ? { ...ex, mode: "alterné", alternates: ex.alternates.length >= 2 ? ex.alternates : [ex.name || "Variante 1", ""], activeAlternateIndex: 0 }
-      : { ...ex, mode: "fixe" }
+      ? {
+          ...ex,
+          mode: "alterné",
+          alternates: ex.alternates.length >= 2 ? ex.alternates : [ex.libraryExerciseId || "", ""],
+          activeAlternateIndex: 0,
+        }
+      : {
+          ...ex,
+          mode: "fixe",
+          libraryExerciseId: ex.alternates[ex.activeAlternateIndex] || ex.libraryExerciseId,
+          name: libExName(ex.alternates[ex.activeAlternateIndex]) || ex.name,
+        }
   );
 }
-function updateAlternate(programId, exId, idx, value) {
-  mutateExercise(programId, exId, (ex) => ({ ...ex, alternates: ex.alternates.map((a, i) => (i === idx ? value : a)) }), { render: false });
+function updateAlternateLibrarySelection(programId, exId, idx, libraryId) {
+  mutateExercise(programId, exId, (ex) => {
+    const alternates = ex.alternates.map((a, i) => (i === idx ? libraryId : a));
+    const name = alternates.map((id) => libExName(id) || "?").join(" / ");
+    return { ...ex, alternates, name };
+  });
 }
 function addAlternateSlot(programId, exId) {
   mutateExercise(programId, exId, (ex) => ({ ...ex, alternates: [...ex.alternates, ""] }));
 }
 function removeAlternateSlot(programId, exId, idx) {
-  mutateExercise(programId, exId, (ex) => ({
-    ...ex,
-    alternates: ex.alternates.filter((_, i) => i !== idx),
-    activeAlternateIndex: Math.min(ex.activeAlternateIndex, Math.max(0, ex.alternates.length - 2)),
-  }));
+  mutateExercise(programId, exId, (ex) => {
+    const alternates = ex.alternates.filter((_, i) => i !== idx);
+    const name = alternates.map((id) => libExName(id) || "?").join(" / ");
+    return {
+      ...ex,
+      alternates,
+      name,
+      activeAlternateIndex: Math.min(ex.activeAlternateIndex, Math.max(0, alternates.length - 1)),
+    };
+  });
 }
 function addSetToExercise(programId, exId) {
   mutateExercise(programId, exId, (ex) => {
@@ -690,8 +713,9 @@ function toggleLibraryMuscle(id, role, muscleId) {
 function computeMuscleScores(program) {
   const scores = {};
   program.exercises.forEach((ex) => {
-    if (!ex.libraryExerciseId) return;
-    const lib = state.libraryExercises.find((l) => l.id === ex.libraryExerciseId);
+    const effectiveId = ex.mode === "alterné" ? ex.alternates[ex.activeAlternateIndex] : ex.libraryExerciseId;
+    if (!effectiveId) return;
+    const lib = state.libraryExercises.find((l) => l.id === effectiveId);
     if (!lib) return;
     const nSets = ex.sets.length;
     lib.primary.forEach((m) => {
@@ -876,16 +900,21 @@ function renderProgramDetail() {
     .map((ex, idx) => {
       const isOpen = !!state.ui.exerciseOpen[ex.id];
       const type = state.exerciseTypes.find((t) => t.id === ex.typeId);
+      const sortedLibrary = [...state.libraryExercises].sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+      const libOptionsHtml = (selectedId) =>
+        `<option value="">— Choisir un exercice —</option>` +
+        sortedLibrary.map((l) => `<option value="${l.id}" ${selectedId === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("");
+
       const altHtml =
         ex.mode === "alterné"
           ? `<div class="alt-box">
-              <div class="alt-current">Aujourd'hui : <span class="yellow">${escapeHtml(ex.alternates[ex.activeAlternateIndex] || "—")}</span></div>
+              <div class="alt-current">Aujourd'hui : <span class="yellow">${escapeHtml(libExName(ex.alternates[ex.activeAlternateIndex]) || "—")}</span></div>
               ${ex.alternates
                 .map(
                   (a, idx) => `
                 <div class="alt-row">
                   <span class="alt-dot ${idx === ex.activeAlternateIndex ? "on" : ""}">&#9679;</span>
-                  <input class="input" data-action="alt-field" data-program="${program.id}" data-ex="${ex.id}" data-idx="${idx}" value="${escapeHtml(a)}" placeholder="Variante ${idx + 1}" />
+                  <select class="input" data-action="alt-library-select" data-program="${program.id}" data-ex="${ex.id}" data-idx="${idx}">${libOptionsHtml(a)}</select>
                   ${ex.alternates.length > 2 ? `<button class="icon-btn" data-action="remove-alt" data-program="${program.id}" data-ex="${ex.id}" data-idx="${idx}">${ICO.cross}</button>` : ""}
                 </div>`
                 )
@@ -925,10 +954,14 @@ function renderProgramDetail() {
             ? `
         <div class="ex-row-body">
         <div class="row-flex mb10">
-          <select class="input bold" data-action="ex-library-select" data-program="${program.id}" data-ex="${ex.id}">
+          ${
+            ex.mode === "alterné"
+              ? `<span class="input bold" style="border-style:dashed; color:var(--muted); display:flex; align-items:center;">${escapeHtml(ex.name) || "Choisis tes variantes ci-dessous"}</span>`
+              : `<select class="input bold" data-action="ex-library-select" data-program="${program.id}" data-ex="${ex.id}">
             <option value="">— Choisir un exercice —</option>
             ${[...state.libraryExercises].sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" })).map((l) => `<option value="${l.id}" ${ex.libraryExerciseId === l.id ? "selected" : ""}>${escapeHtml(l.name)}</option>`).join("")}
-          </select>
+          </select>`
+          }
           <button class="btn btn-ghost ${ex.mode === "alterné" ? "on-yellow" : ""}" data-action="toggle-mode" data-program="${program.id}" data-ex="${ex.id}">${ICO.repeat} ${ex.mode === "alterné" ? "Alterné" : "Fixe"}</button>
           <button class="icon-btn" data-action="remove-exercise" data-program="${program.id}" data-ex="${ex.id}">${ICO.trash}</button>
         </div>
@@ -1751,9 +1784,6 @@ function handleInput(e) {
   const sub = el.dataset.sub;
 
   switch (a) {
-    case "alt-field":
-      updateAlternate(program, ex, Number(idx), el.value);
-      break;
     case "set-field":
       updateSetField(program, ex, setId, el.dataset.field, el.value);
       break;
@@ -1786,6 +1816,7 @@ function handleChange(e) {
   const program = el.dataset.program;
   const ex = el.dataset.ex;
   const id = el.dataset.id;
+  const idx = el.dataset.idx;
 
   switch (a) {
     case "ex-type":
@@ -1793,6 +1824,9 @@ function handleChange(e) {
       break;
     case "ex-library-select":
       updateExerciseLibrarySelection(program, ex, el.value);
+      break;
+    case "alt-library-select":
+      updateAlternateLibrarySelection(program, ex, Number(idx), el.value);
       break;
     case "schedule-day":
       updateScheduleDay(el.dataset.day, el.value);
