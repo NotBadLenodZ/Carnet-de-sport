@@ -681,3 +681,42 @@ select.input {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+/* ---------- import IA ---------- */
+textarea.input {
+  min-height: 150px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+.imp-block {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.imp-line {
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.imp-line:last-child {
+  border-bottom: none;
+}
+.imp-warn {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--yellow);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.imp-error {
+  color: var(--red);
+  font-size: 13px;
+  margin-top: 8px;
+}
+.imp-ok {
+  color: var(--accent);
+}

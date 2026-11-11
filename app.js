@@ -229,6 +229,18 @@ const state = {
     confirmingDeleteLibraryId: null,
     showMuscleMap: false,
     exerciseOpen: {}, // { [exerciseId]: bool } — replié par défaut
+    importText: "",
+    importPlan: null,
+    importError: "",
+    importDone: "",
+    showPrompt: false,
+    promptCopied: false,
+    backupText: "",
+    backupMsg: "",
+    restoreText: "",
+    restorePlan: null,
+    restoreError: "",
+    restoreMsg: "",
   },
 };
 
@@ -845,6 +857,8 @@ function renderTabContent() {
 function renderSeanceTab() {
   if (state.seanceView === "types") return renderTypesPanel();
   if (state.seanceView === "historique") return renderHistoriquePanel();
+  if (state.seanceView === "import") return renderImportPanel();
+  if (state.seanceView === "backup") return renderBackupPanel();
   if (state.seanceView === "detail") return renderProgramDetail();
   return renderProgramList();
 }
@@ -883,10 +897,16 @@ function renderProgramList() {
         <button class="btn btn-ghost btn-block" data-action="start-new-program"><span>${ICO.plus}</span> Nouvelle séance</button>
       </div>
       <div class="card">
+        <button class="btn btn-ghost btn-block" data-action="open-import">Importer depuis l'IA ${ICO.chevronRight}</button>
+      </div>
+      <div class="card">
         <button class="btn btn-ghost btn-block" data-action="open-types">Modèle de progression ${ICO.chevronRight}</button>
       </div>
       <div class="card">
         <button class="btn btn-ghost btn-block" data-action="open-historique">Historique des compteurs ${ICO.chevronRight}</button>
+      </div>
+      <div class="card">
+        <button class="btn btn-ghost btn-block" data-action="open-backup">Sauvegarde ${ICO.chevronRight}</button>
       </div>
     </div>
   `;
@@ -1444,6 +1464,7 @@ function renderLibraryList() {
         <div class="section-title"><span class="eyebrow">Fiches exercice</span><h2>Bibliothèque</h2></div>
         <div class="list">${rows || '<p class="muted">Aucun exercice pour l\'instant.</p>'}</div>
         <button class="btn btn-ghost btn-block" data-action="start-new-library-exercise"><span>${ICO.plus}</span> Nouvel exercice</button>
+        <button class="btn btn-ghost btn-block mt8" data-action="open-import">Importer depuis l'IA ${ICO.chevronRight}</button>
       </div>
     </div>
   `;
@@ -1505,6 +1526,611 @@ function renderLibraryBodyPreview(ex) {
   `;
 }
 
+
+/* ============================================================
+   IMPORT IA (séances + bibliothèque)
+   L'IA répond avec un JSON ; l'appli l'analyse, montre un aperçu,
+   puis crée les fiches bibliothèque manquantes et les séances.
+   ============================================================ */
+
+function normName(s) {
+  return String(s == null ? "" : s)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Muscles que l'on peut cocher dans l'appli (hors Cardio / Autre)
+function selectableMuscles() {
+  return MUSCLE_GROUPS.filter((g) => g.id !== "cardio" && g.id !== "autre");
+}
+function muscleLabel(id) {
+  const g = MUSCLE_GROUPS.find((x) => x.id === id);
+  return g ? g.label : id;
+}
+
+function extractJsonText(raw) {
+  let t = String(raw || "").trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const a = t.indexOf("{");
+  const b = t.lastIndexOf("}");
+  if (a === -1 || b === -1 || b < a) return null;
+  return t.slice(a, b + 1);
+}
+
+function buildImportPlan(raw) {
+  const jsonText = extractJsonText(raw);
+  if (!jsonText) return { error: "Je ne trouve pas de JSON dans le texte collé. Colle la réponse complète de l'IA (elle doit commencer par une accolade)." };
+  let data;
+  try {
+    data = JSON.parse(jsonText);
+  } catch (e1) {
+    try {
+      data = JSON.parse(jsonText.replace(/[“”]/g, '"').replace(/[‘’]/g, "'"));
+    } catch (e2) {
+      return { error: "Le JSON est invalide (" + e1.message + "). Redemande à l'IA de corriger le format." };
+    }
+  }
+  if (!data || typeof data !== "object") return { error: "Format inattendu : l'IA doit répondre avec un objet JSON." };
+
+  const warnings = [];
+
+  // correspondance muscles (id ou libellé, sans accents)
+  const muscleLookup = {};
+  selectableMuscles().forEach((g) => {
+    muscleLookup[normName(g.id).replace(/_/g, " ")] = g.id;
+    muscleLookup[normName(g.label)] = g.id;
+  });
+  function parseMuscleList(list, ctx) {
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach((m) => {
+      const id = muscleLookup[normName(m).replace(/_/g, " ")];
+      if (!id) warnings.push("Muscle inconnu ignoré (« " + m + " ») pour " + ctx + ".");
+      else if (!out.includes(id)) out.push(id);
+    });
+    return out;
+  }
+
+  // bibliothèque : existante + nouvelles fiches du plan
+  const libByName = new Map();
+  state.libraryExercises.forEach((l) => libByName.set(normName(l.name), { id: l.id, name: l.name, existing: true }));
+  const newLib = [];
+
+  (Array.isArray(data.bibliotheque) ? data.bibliotheque : []).forEach((item) => {
+    const name = String((item && (item.nom || item.name)) || "").trim();
+    if (!name) return;
+    const key = normName(name);
+    if (libByName.has(key)) {
+      warnings.push(
+        libByName.get(key).existing
+          ? "« " + name + " » existe déjà dans ta bibliothèque : fiche conservée telle quelle."
+          : "« " + name + " » est défini deux fois : la première définition est gardée."
+      );
+      return;
+    }
+    const primary = parseMuscleList(item.principaux, name);
+    const secondary = parseMuscleList(item.secondaires, name).filter((m) => {
+      if (primary.includes(m)) {
+        warnings.push("« " + name + " » : " + muscleLabel(m) + " était en principal ET en secondaire, gardé en principal.");
+        return false;
+      }
+      return true;
+    });
+    if (!primary.length) warnings.push("« " + name + " » : aucun muscle principal indiqué.");
+    const entry = { id: uid(), name, primary, secondary };
+    libByName.set(key, { id: entry.id, name, existing: false });
+    newLib.push(entry);
+  });
+
+  function resolveLib(name) {
+    const clean = String(name == null ? "" : name).trim();
+    if (!clean) return null;
+    const key = normName(clean);
+    if (libByName.has(key)) return libByName.get(key);
+    const entry = { id: uid(), name: clean, primary: [], secondary: [] };
+    libByName.set(key, { id: entry.id, name: clean, existing: false });
+    newLib.push(entry);
+    warnings.push("« " + clean + " » n'est pas dans la bibliothèque : fiche créée SANS muscles (à compléter).");
+    return libByName.get(key);
+  }
+
+  const toNum = (v, d) => {
+    const n = Number(v);
+    return v === "" || v == null || Number.isNaN(n) ? d : n;
+  };
+  const parseReps = (r) => {
+    if (typeof r === "number") return r;
+    const s = String(r == null ? "" : r).trim();
+    if (s !== "" && !Number.isNaN(Number(s))) return Number(s);
+    return s || 10;
+  };
+
+  const rawSeances = Array.isArray(data.seances) ? data.seances : data.seance ? [data.seance] : [];
+  const programs = [];
+  rawSeances.forEach((s, si) => {
+    const pname = String((s && (s.nom || s.name)) || "").trim() || "Séance importée " + (si + 1);
+    if (state.programs.some((p) => normName(p.name) === normName(pname))) {
+      warnings.push("Une séance « " + pname + " » existe déjà : la nouvelle sera ajoutée en plus.");
+    }
+    const exercises = [];
+    (Array.isArray(s && s.exercices) ? s.exercices : []).forEach((ex, ei) => {
+      const ctx = pname + " · exercice " + (ei + 1);
+      if (!ex || typeof ex !== "object") return;
+      let names = [];
+      if (Array.isArray(ex.alterne)) names = ex.alterne;
+      else if (ex.exercice || ex.nom) names = [ex.exercice || ex.nom];
+      names = names.map((n) => String(n == null ? "" : n).trim()).filter(Boolean);
+      if (!names.length) {
+        warnings.push(ctx + " : aucun nom d'exercice, ignoré.");
+        return;
+      }
+      let kind = "fixe";
+      if (Array.isArray(ex.alterne)) {
+        if (names.length >= 2) kind = "alterne";
+        else warnings.push(ctx + " : « alterne » avec moins de 2 exercices, traité comme un exercice fixe.");
+      }
+      const libs = (kind === "alterne" ? names : [names[0]]).map((n) => resolveLib(n));
+
+      let typeId = null;
+      let typeName = "";
+      if (ex.type != null && String(ex.type).trim() !== "") {
+        const t = state.exerciseTypes.find((x) => normName(x.name) === normName(ex.type));
+        if (t) {
+          typeId = t.id;
+          typeName = t.name;
+        } else warnings.push(ctx + " : type de progression « " + ex.type + " » introuvable, aucun type appliqué.");
+      }
+
+      let sets = [];
+      if (Array.isArray(ex.series)) {
+        sets = ex.series.map((x) => mkSet(parseReps(x && x.reps), toNum(x && (x.poids != null ? x.poids : x.kg), 0), toNum(x && x.recup, 75)));
+      } else if (typeof ex.series === "number" && ex.series > 0) {
+        const n = Math.min(Math.round(ex.series), 20);
+        sets = Array.from({ length: n }, () => mkSet(parseReps(ex.reps), toNum(ex.poids, 0), toNum(ex.recup, 75)));
+      }
+      if (!sets.length) {
+        warnings.push(ctx + " : aucune série indiquée, 3 séries par défaut ajoutées.");
+        sets = [mkSet(10, 0, 75), mkSet(10, 0, 75), mkSet(10, 0, 75)];
+      }
+      exercises.push({ kind, libs, typeId, typeName, sets });
+    });
+    if (!exercises.length) warnings.push("La séance « " + pname + " » ne contient aucun exercice exploitable.");
+    programs.push({ name: pname, exercises });
+  });
+
+  if (!programs.length && !newLib.length) {
+    return { error: "Rien à importer : le JSON ne contient ni « seances » ni « bibliotheque » exploitable." };
+  }
+  return { plan: { newLib, programs, warnings } };
+}
+
+function buildExerciseFromPlan(e) {
+  if (e.kind === "alterne") {
+    return mkEx({
+      name: e.libs.map((l) => l.name).join(" / "),
+      typeId: e.typeId,
+      mode: "alterné",
+      alternates: e.libs.map((l) => l.id),
+      sets: e.sets,
+      libraryExerciseId: null,
+    });
+  }
+  return mkEx({ name: e.libs[0].name, typeId: e.typeId, libraryExerciseId: e.libs[0].id, sets: e.sets });
+}
+
+function applyImportPlan() {
+  const plan = state.ui.importPlan;
+  if (!plan) return;
+  if (plan.newLib.length) {
+    state.libraryExercises = [...state.libraryExercises, ...plan.newLib.map((l) => ({ id: l.id, name: l.name, primary: l.primary, secondary: l.secondary }))];
+    saveKey("library-exercises", state.libraryExercises);
+  }
+  if (plan.programs.length) {
+    const progs = plan.programs.map((p) => mkProgram(p.name, p.exercises.map(buildExerciseFromPlan)));
+    state.programs = [...state.programs, ...progs];
+    saveKey("programs", state.programs);
+  }
+  state.ui.importDone =
+    "Import terminé : " +
+    plan.programs.length +
+    " séance" +
+    (plan.programs.length > 1 ? "s" : "") +
+    ", " +
+    plan.newLib.length +
+    " fiche" +
+    (plan.newLib.length > 1 ? "s" : "") +
+    " bibliothèque créée" +
+    (plan.newLib.length > 1 ? "s" : "") +
+    ".";
+  state.ui.importPlan = null;
+  state.ui.importText = "";
+  state.ui.importError = "";
+  render();
+}
+
+function summarizeSets(sets) {
+  const same = sets.every((s) => s.reps === sets[0].reps && s.weight === sets[0].weight && s.rest === sets[0].rest);
+  if (same) return sets.length + " × " + sets[0].reps + " reps @ " + sets[0].weight + " kg · récup " + sets[0].rest + " s";
+  return sets.length + " séries : " + sets.map((s) => s.reps + "×" + s.weight + "kg").join(", ");
+}
+
+/* ---------------------------- prompt à envoyer à l'IA ---------------------------- */
+
+function buildAIPrompt() {
+  const muscles = selectableMuscles().map((g) => "- " + g.id + " (" + g.label + ")").join("\n");
+  const lib =
+    [...state.libraryExercises]
+      .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }))
+      .map((l) => "- " + l.name)
+      .join("\n") || "(vide pour l'instant)";
+  const types =
+    state.exerciseTypes
+      .map((t) => "- " + t.name + " (" + t.repMin + " à " + t.repMax + " reps, +" + t.repStep + " rep, +" + t.weightStep + " kg)")
+      .join("\n") || "(aucun)";
+
+  return `Tu es mon assistant de musculation. Je te décris la séance (ou le programme) que je veux. Tu réponds UNIQUEMENT avec un bloc JSON au format ci-dessous, sans texte avant ni après, que j'importerai tel quel dans mon appli « Carnet de fonte ».
+
+FORMAT ATTENDU
+{
+  "format": "carnet-de-fonte",
+  "bibliotheque": [
+    { "nom": "Hip thrust", "principaux": ["fessiers"], "secondaires": ["ischio_jambiers", "quadriceps"] }
+  ],
+  "seances": [
+    {
+      "nom": "Jambes A",
+      "exercices": [
+        {
+          "exercice": "Hip thrust",
+          "type": null,
+          "series": [
+            { "reps": 8, "poids": 60, "recup": 120 },
+            { "reps": 8, "poids": 60, "recup": 120 },
+            { "reps": 8, "poids": 60, "recup": 120 }
+          ]
+        },
+        {
+          "alterne": ["Leg curl", "Leg extension"],
+          "type": null,
+          "series": [
+            { "reps": 10, "poids": 35, "recup": 90 },
+            { "reps": 10, "poids": 35, "recup": 90 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+RÈGLES
+1. Un exercice utilise soit "exercice" (le nom d'une fiche), soit "alterne" (au moins 2 noms de fiches : l'appli alterne de l'un à l'autre à chaque séance réalisée).
+2. Tout nom utilisé dans "seances" doit exister dans MA BIBLIOTHÈQUE ci-dessous, ou être décrit dans "bibliotheque". N'ajoute dans "bibliotheque" QUE les exercices absents de ma liste, et réutilise EXACTEMENT les noms existants.
+3. Muscles : uniquement les identifiants de la liste ci-dessous. "principaux" = muscles principalement travaillés (1 point par série), "secondaires" = muscles qui aident (0,5 point par série). Un muscle ne peut pas être dans les deux listes. Reste précis : en général 1 à 2 muscles principaux.
+4. "reps" : un nombre (ou un texte court si nécessaire, par exemple "8/côté" ou "30s"). "poids" : en kg (0 pour le poids du corps). "recup" : temps de récupération en secondes.
+5. "type" : le nom exact d'un type de progression de ma liste, ou null. Il active la progression automatique des charges.
+6. Chaque ligne de "series" est une série. Les séries d'un même exercice peuvent être différentes (échauffement, séries lourdes...).
+7. Réponds uniquement avec le JSON, éventuellement dans un bloc de code.
+
+MUSCLES AUTORISÉS (identifiant : nom)
+${muscles}
+
+MA BIBLIOTHÈQUE ACTUELLE
+${lib}
+
+MES TYPES DE PROGRESSION
+${types}
+
+CONTRAINTES PERSONNELLES (blessures, matériel disponible, exercices à éviter)
+(à compléter)
+
+MA DEMANDE
+(décris ici la séance ou le programme que tu veux)`;
+}
+
+function copyAIPrompt() {
+  const text = buildAIPrompt();
+  const done = () => {
+    state.ui.promptCopied = true;
+    render();
+    setTimeout(() => {
+      state.ui.promptCopied = false;
+      if (state.tab === "seance" && state.seanceView === "import") render();
+    }, 2000);
+  };
+  const fallback = () => {
+    state.ui.showPrompt = true;
+    render();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
+  else fallback();
+}
+
+/* ---------------------------- écran d'import ---------------------------- */
+
+function renderImportPanel() {
+  const ui = state.ui;
+  const plan = ui.importPlan;
+
+  const promptCard = `
+    <div class="card">
+      <div class="section-title"><span class="eyebrow">Étape 1</span><h2>Demande à l'IA</h2></div>
+      <p class="hint mb10">Copie le prompt, colle-le dans une conversation avec l'IA, puis ajoute ta demande en bas (ex. « séance jambes de 45 min »). Le prompt contient déjà ta bibliothèque et tes types de progression.</p>
+      <div class="row-flex">
+        <button class="btn btn-primary" data-action="copy-ai-prompt">${ui.promptCopied ? ICO.check + " Copié" : "Copier le prompt"}</button>
+        <button class="btn btn-ghost" data-action="toggle-ai-prompt">${ui.showPrompt ? "Masquer" : "Voir"}</button>
+      </div>
+      ${ui.showPrompt ? `<textarea class="input mt8" readonly rows="10">${escapeHtml(buildAIPrompt())}</textarea>` : ""}
+    </div>`;
+
+  const pasteCard = `
+    <div class="card">
+      <div class="section-title"><span class="eyebrow">Étape 2</span><h2>Colle la réponse</h2></div>
+      <textarea id="import-text" class="input" data-action="import-text" placeholder="Colle ici le JSON renvoyé par l'IA">${escapeHtml(ui.importText)}</textarea>
+      ${ui.importError ? `<div class="imp-error">${escapeHtml(ui.importError)}</div>` : ""}
+      <div class="row-flex mt10">
+        <button class="btn btn-primary" data-action="analyze-import">Analyser</button>
+        ${ui.importText ? `<button class="btn btn-ghost" data-action="clear-import">${ICO.cross} Vider</button>` : ""}
+      </div>
+    </div>`;
+
+  let previewCard = "";
+  if (plan) {
+    const libHtml = plan.newLib.length
+      ? `<div class="tag-section-label">Fiches bibliothèque à créer (${plan.newLib.length})</div>` +
+        plan.newLib
+          .map(
+            (l) => `<div class="imp-block"><div class="bold">${escapeHtml(l.name)}</div>
+              <div class="small muted">Principal : ${l.primary.length ? l.primary.map(muscleLabel).join(", ") : "—"}</div>
+              <div class="small muted">Secondaire : ${l.secondary.length ? l.secondary.map(muscleLabel).join(", ") : "—"}</div></div>`
+          )
+          .join("")
+      : "";
+    const progHtml = plan.programs
+      .map(
+        (p) => `<div class="tag-section-label">Séance</div>
+        <div class="imp-block"><div class="program-title" style="font-size:17px">${escapeHtml(p.name)}</div>
+        ${p.exercises
+          .map(
+            (e, i) => `<div class="imp-line"><span class="bold">${i + 1}. ${e.libs.map((l) => escapeHtml(l.name)).join(e.kind === "alterne" ? " ⇄ " : "")}</span>
+              ${e.kind === "alterne" ? '<span class="yellow small"> · alterné</span>' : ""}
+              <div class="small muted">${escapeHtml(summarizeSets(e.sets))}${e.typeName ? " · type : " + escapeHtml(e.typeName) : ""}</div></div>`
+          )
+          .join("")}</div>`
+      )
+      .join("");
+    const warnHtml = plan.warnings.length
+      ? `<div class="tag-section-label">À vérifier</div><ul class="imp-warn">${plan.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>`
+      : "";
+    previewCard = `
+      <div class="card">
+        <div class="section-title"><span class="eyebrow">Étape 3</span><h2>Aperçu</h2></div>
+        ${libHtml}${progHtml}${warnHtml}
+        <div class="row-flex mt10">
+          <button class="btn btn-primary" data-action="confirm-import">${ICO.check} Confirmer l'import</button>
+          <button class="btn btn-ghost" data-action="cancel-import">Annuler</button>
+        </div>
+      </div>`;
+  }
+
+  const doneCard = ui.importDone
+    ? `<div class="card"><div class="imp-ok bold">${escapeHtml(ui.importDone)}</div>
+        <div class="row-flex mt10"><button class="btn btn-ghost" data-action="back-to-list">Voir mes séances</button></div></div>`
+    : "";
+
+  return `
+    <div class="stack">
+      <button class="btn btn-ghost" data-action="back-to-list">&larr; Retour</button>
+      ${doneCard}
+      ${promptCard}
+      ${pasteCard}
+      ${previewCard}
+    </div>`;
+}
+
+/* ============================================================
+   SAUVEGARDE / RESTAURATION
+   ============================================================ */
+
+function collectBackup(scope) {
+  const all = {
+    programs: state.programs,
+    exercise_types: state.exerciseTypes,
+    library_exercises: state.libraryExercises,
+    schedule: state.schedule,
+    history: state.history,
+    body_metrics: state.bodyMetrics,
+    goals: state.goals,
+    records: state.records,
+  };
+  const keys = scope === "ia" ? ["programs", "exercise_types", "library_exercises"] : Object.keys(all);
+  const donnees = {};
+  keys.forEach((k) => (donnees[k] = all[k]));
+  return JSON.stringify({
+    format: "carnet-de-fonte-sauvegarde",
+    version: 1,
+    date: new Date().toISOString(),
+    portee: scope === "ia" ? "seances-bibliotheque" : "complete",
+    donnees,
+  });
+}
+
+function copyTextToClipboard(text, onOk, onFail) {
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(onOk).catch(onFail);
+  else onFail();
+}
+
+function runBackupCopy(scope) {
+  const text = collectBackup(scope);
+  const kb = Math.max(1, Math.round(text.length / 1024));
+  state.ui.backupText = text;
+  copyTextToClipboard(
+    text,
+    () => {
+      state.ui.backupMsg = "Copié (" + kb + " Ko). Colle-le maintenant dans la conversation.";
+      render();
+    },
+    () => {
+      state.ui.backupMsg = "Copie automatique impossible : touche le texte ci-dessous pour le sélectionner, puis copie-le.";
+      render();
+    }
+  );
+}
+
+function downloadBackup() {
+  const text = collectBackup("all");
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "carnet-de-fonte-sauvegarde-" + todayISO() + ".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  state.ui.backupMsg = "Fichier « " + a.download + " » téléchargé.";
+  render();
+}
+
+function buildRestorePlan(raw) {
+  const jsonText = extractJsonText(raw);
+  if (!jsonText) return { error: "Je ne trouve pas de sauvegarde dans le texte collé." };
+  let data;
+  try {
+    data = JSON.parse(jsonText);
+  } catch (e) {
+    return { error: "Le texte collé n'est pas un JSON valide (" + e.message + ")." };
+  }
+  if (!data || data.format !== "carnet-de-fonte-sauvegarde" || !data.donnees || typeof data.donnees !== "object") {
+    return { error: "Ce texte n'est pas une sauvegarde de Carnet de fonte." };
+  }
+  const d = data.donnees;
+  const spec = [
+    ["programs", "séances", "array"],
+    ["exercise_types", "types de progression", "array"],
+    ["library_exercises", "fiches bibliothèque", "array"],
+    ["schedule", "planning", "object"],
+    ["history", "historique des séances", "array"],
+    ["body_metrics", "mensurations", "array"],
+    ["goals", "objectifs", "array"],
+    ["records", "records", "array"],
+  ];
+  const items = [];
+  for (const [k, label, kind] of spec) {
+    if (!(k in d)) continue;
+    const v = d[k];
+    const ok = kind === "array" ? Array.isArray(v) : v && typeof v === "object" && !Array.isArray(v);
+    if (!ok) return { error: "Données invalides pour « " + label + " »." };
+    items.push({ key: k, label, count: kind === "array" ? v.length : Object.keys(v).length });
+  }
+  if (!items.length) return { error: "La sauvegarde est vide." };
+  if ("programs" in d && !d.programs.every((p) => p && typeof p === "object" && Array.isArray(p.exercises))) {
+    return { error: "Les séances de la sauvegarde sont mal formées." };
+  }
+  return { plan: { data: d, items, date: data.date || "" } };
+}
+
+function applyRestore() {
+  const plan = state.ui.restorePlan;
+  if (!plan) return;
+  const d = plan.data;
+  if ("programs" in d) {
+    state.programs = d.programs;
+    saveKey("programs", state.programs);
+  }
+  if ("exercise_types" in d) {
+    state.exerciseTypes = d.exercise_types;
+    saveKey("exercise-types", state.exerciseTypes);
+  }
+  if ("library_exercises" in d) {
+    state.libraryExercises = d.library_exercises;
+    saveKey("library-exercises", state.libraryExercises);
+  }
+  if ("schedule" in d) {
+    state.schedule = d.schedule;
+    saveKey("schedule", state.schedule);
+  }
+  if ("history" in d) {
+    state.history = d.history;
+    saveKey("history", state.history);
+  }
+  if ("body_metrics" in d) {
+    state.bodyMetrics = d.body_metrics;
+    saveKey("body-metrics", state.bodyMetrics);
+  }
+  if ("goals" in d) {
+    state.goals = d.goals;
+    saveKey("goals", state.goals);
+  }
+  if ("records" in d) {
+    state.records = d.records;
+    saveKey("records", state.records);
+  }
+  state.activeProgramId = state.programs[0] ? state.programs[0].id : null;
+  state.ui.exerciseOpen = {};
+  state.ui.restoreMsg = "Restauration terminée : " + plan.items.map((i) => i.count + " " + i.label).join(", ") + ".";
+  state.ui.restorePlan = null;
+  state.ui.restoreText = "";
+  state.ui.restoreError = "";
+  render();
+}
+
+function renderBackupPanel() {
+  const ui = state.ui;
+  const plan = ui.restorePlan;
+  const restorePreview = plan
+    ? `<div class="imp-block mt10">
+        <div class="bold">Cette sauvegarde va REMPLACER :</div>
+        <ul class="imp-warn" style="color:var(--text)">${plan.items.map((i) => `<li>${escapeHtml(i.label)} (${i.count})</li>`).join("")}</ul>
+        ${plan.date ? `<div class="small muted">Créée le ${escapeHtml(plan.date.slice(0, 10))}</div>` : ""}
+        <div class="row-flex mt10">
+          <button class="btn btn-primary btn-danger" data-action="confirm-restore">${ICO.check} Remplacer mes données</button>
+          <button class="btn btn-ghost" data-action="cancel-restore">Annuler</button>
+        </div>
+      </div>`
+    : "";
+  return `
+    <div class="stack">
+      <button class="btn btn-ghost" data-action="back-to-list">&larr; Retour</button>
+
+      <div class="card">
+        <div class="section-title"><span class="eyebrow">Pour l'IA</span><h2>Envoyer mes données</h2></div>
+        <p class="hint mb10">Copie tes séances, ta bibliothèque et tes types de progression (sans mensurations, objectifs ni records), puis colle le texte dans la conversation.</p>
+        <button class="btn btn-primary" data-action="copy-backup-ia">Copier séances + bibliothèque</button>
+      </div>
+
+      <div class="card">
+        <div class="section-title"><span class="eyebrow">Sécurité</span><h2>Sauvegarde complète</h2></div>
+        <p class="hint mb10">Toutes tes données : séances, bibliothèque, planning, historique, mensurations, objectifs et records.</p>
+        <div class="row-flex wrap">
+          <button class="btn btn-primary" data-action="copy-backup-all">Copier tout</button>
+          <button class="btn btn-ghost" data-action="download-backup">Télécharger le fichier</button>
+        </div>
+      </div>
+
+      ${
+        ui.backupMsg || ui.backupText
+          ? `<div class="card">
+              ${ui.backupMsg ? `<div class="imp-ok bold mb10">${escapeHtml(ui.backupMsg)}</div>` : ""}
+              ${ui.backupText ? `<textarea class="input" readonly rows="6" data-action="backup-text">${escapeHtml(ui.backupText)}</textarea>` : ""}
+            </div>`
+          : ""
+      }
+
+      <div class="card">
+        <div class="section-title"><span class="eyebrow">Restauration</span><h2>Restaurer une sauvegarde</h2></div>
+        ${ui.restoreMsg ? `<div class="imp-ok bold mb10">${escapeHtml(ui.restoreMsg)}</div>` : ""}
+        <textarea id="restore-text" class="input" data-action="restore-text" placeholder="Colle ici une sauvegarde copiée plus haut">${escapeHtml(ui.restoreText)}</textarea>
+        ${ui.restoreError ? `<div class="imp-error">${escapeHtml(ui.restoreError)}</div>` : ""}
+        <div class="row-flex mt10">
+          <button class="btn btn-ghost" data-action="analyze-restore">Analyser</button>
+        </div>
+        ${restorePreview}
+      </div>
+    </div>`;
+}
 
 /* ============================================================
    ÉVÉNEMENTS
@@ -1766,6 +2392,82 @@ function handleClick(e) {
       state.ui.showMuscleMap = !state.ui.showMuscleMap;
       render();
       break;
+
+    // import IA
+    case "open-import":
+      state.tab = "seance";
+      state.seanceView = "import";
+      state.ui.importDone = "";
+      render();
+      break;
+    case "copy-ai-prompt":
+      copyAIPrompt();
+      break;
+    case "toggle-ai-prompt":
+      state.ui.showPrompt = !state.ui.showPrompt;
+      render();
+      break;
+    case "analyze-import": {
+      const ta = byId("import-text");
+      if (ta) state.ui.importText = ta.value;
+      state.ui.importDone = "";
+      const res = buildImportPlan(state.ui.importText);
+      state.ui.importError = res.error || "";
+      state.ui.importPlan = res.plan || null;
+      render();
+      break;
+    }
+    case "confirm-import":
+      applyImportPlan();
+      break;
+    case "cancel-import":
+      state.ui.importPlan = null;
+      render();
+      break;
+    case "clear-import":
+      state.ui.importText = "";
+      state.ui.importPlan = null;
+      state.ui.importError = "";
+      render();
+      break;
+
+    // sauvegarde
+    case "open-backup":
+      state.seanceView = "backup";
+      state.ui.backupMsg = "";
+      state.ui.backupText = "";
+      state.ui.restoreMsg = "";
+      render();
+      break;
+    case "copy-backup-ia":
+      runBackupCopy("ia");
+      break;
+    case "copy-backup-all":
+      runBackupCopy("all");
+      break;
+    case "download-backup":
+      downloadBackup();
+      break;
+    case "backup-text":
+      if (el.select) el.select();
+      break;
+    case "analyze-restore": {
+      const ta = byId("restore-text");
+      if (ta) state.ui.restoreText = ta.value;
+      state.ui.restoreMsg = "";
+      const res = buildRestorePlan(state.ui.restoreText);
+      state.ui.restoreError = res.error || "";
+      state.ui.restorePlan = res.plan || null;
+      render();
+      break;
+    }
+    case "confirm-restore":
+      applyRestore();
+      break;
+    case "cancel-restore":
+      state.ui.restorePlan = null;
+      render();
+      break;
   }
 }
 
@@ -1804,6 +2506,12 @@ function handleInput(e) {
       break;
     case "library-name":
       updateLibraryExerciseName(id, el.value);
+      break;
+    case "import-text":
+      state.ui.importText = el.value;
+      break;
+    case "restore-text":
+      state.ui.restoreText = el.value;
       break;
   }
 }

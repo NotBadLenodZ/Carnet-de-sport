@@ -1,4 +1,4 @@
-const CACHE_NAME = "carnet-de-fonte-v2";
+const CACHE_NAME = "carnet-de-fonte-v4";
 const ASSETS = [
   "./",
   "./index.html",
